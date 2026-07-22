@@ -131,7 +131,7 @@ func registerEndpoint(server *mcp.Server, doer Doer, t SpecTool, opts Options) {
 		if aug != nil {
 			tokens := embedTokensFromInput(in)
 			if len(tokens) > 0 {
-				if err := aug.Apply(ctx, doer, result, tokens); err != nil {
+				if err := aug.Apply(ctx, augmentorDoer(doer, in, opts), result, tokens); err != nil {
 					return ErrorResult(err), nil, nil
 				}
 			}
@@ -221,6 +221,36 @@ func toolResult(v any) (*mcp.CallToolResult, any, error) {
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: string(raw)}},
 	}, structured, nil
+}
+
+// augmentorDoer scopes enrichment sub-calls to the tool call's workspace:
+// workspace-routing doers mint per-workspace credentials from pathParams, and
+// augmentor endpoints (/dictionary/*) carry no workspace of their own.
+func augmentorDoer(doer Doer, in map[string]any, opts Options) Doer {
+	if !opts.WorkspaceParam {
+		return doer
+	}
+	wsID := StringValue(in[WorkspaceParamName])
+	if wsID == "" {
+		return doer
+	}
+	return scopedDoer{inner: doer, params: map[string]string{WorkspaceParamName: wsID}}
+}
+
+type scopedDoer struct {
+	inner  Doer
+	params map[string]string
+}
+
+func (d scopedDoer) Do(ctx context.Context, method, path string, pathParams map[string]string, body, query, result any) error {
+	merged := make(map[string]string, len(d.params)+len(pathParams))
+	for k, v := range d.params {
+		merged[k] = v
+	}
+	for k, v := range pathParams {
+		merged[k] = v
+	}
+	return d.inner.Do(ctx, method, path, merged, body, query, result)
 }
 
 // runEndpoint executes one HelpEntry — same code path as the generated CLI
