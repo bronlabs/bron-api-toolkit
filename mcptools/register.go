@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -100,9 +101,8 @@ func SpecTools(opts Options) []SpecTool {
 	return out
 }
 
-// RegisterSpecDriven auto-registers one MCP tool per CLI endpoint that passes
-// opts, all driven by the generated metadata. Untouched when new endpoints
-// land — regen is the only step.
+// RegisterSpecDriven registers one MCP tool per catalog endpoint passing opts;
+// new endpoints need only a catalog regen.
 func RegisterSpecDriven(server *mcp.Server, doer Doer, opts Options) {
 	for _, t := range SpecTools(opts) {
 		registerEndpoint(server, doer, t, opts)
@@ -144,11 +144,8 @@ func registerEndpoint(server *mcp.Server, doer Doer, t SpecTool, opts Options) {
 	})
 }
 
-// shapeResult runs the response pipeline: untrusted wrapping first (so its
-// markers survive projection), then field projection, then the optional jq
-// program, then date humanization. Wrapping before Project is a security
-// requirement — projecting first strips leaves before they can be wrapped. The
-// untrusted set is the endpoint's spec-driven `external-text` key names.
+// Wrapping before Project is a security requirement — projecting first strips
+// leaves before the untrusted markers can be attached.
 func shapeResult(result any, fields []string, jqProg string, untrusted map[string]bool) (any, error) {
 	shaped := output.Project(WrapUntrustedFieldsWithKeys(result, untrusted), fields)
 	if jqProg != "" {
@@ -274,6 +271,8 @@ func runEndpoint(ctx context.Context, doer Doer, e catalog.HelpEntry, in map[str
 		pathParams[name] = s
 	}
 
+	page := listPagePlan(e, in)
+
 	var query any
 	if len(e.QueryParams) > 0 {
 		q := map[string]any{}
@@ -287,6 +286,9 @@ func runEndpoint(ctx context.Context, doer Doer, e catalog.HelpEntry, in map[str
 				return nil, err
 			}
 			q[p.Name] = coerced
+		}
+		if page != nil {
+			q["limit"] = strconv.Itoa(page.limit + 1)
 		}
 		if len(q) > 0 {
 			query = q
@@ -313,5 +315,80 @@ func runEndpoint(ctx context.Context, doer Doer, e catalog.HelpEntry, in map[str
 	if err := doer.Do(ctx, e.Method, e.Path, pathParams, payload, query, &result); err != nil {
 		return nil, err
 	}
+	attachListMeta(result, page)
 	return result, nil
+}
+
+const (
+	// defaultListLimit is a deliberate MCP default far below the backend's
+	// 1000 — a page usually answers the question, and _embedded.hasMore says
+	// when it doesn't.
+	defaultListLimit = 50
+
+	// maxMetaLimit must stay below every backend limit clamp (catalog list
+	// endpoints cap at >=1000 via Paging.limit) — a clamped +1 probe row would
+	// turn hasMore into a false negative.
+	maxMetaLimit = 999
+)
+
+type listPage struct {
+	arrayKey string
+	limit    int
+}
+
+// Backend list envelopes carry no total/hasMore, so without the limit+1 probe
+// an agent on the default limit mistakes the first page for the whole set.
+func listPagePlan(e catalog.HelpEntry, in map[string]any) *listPage {
+	if e.Method != "GET" {
+		return nil
+	}
+	arrayKey, ok := catalog.ResponseEnvelopeArrayKey(e.ResponseRef)
+	if !ok {
+		return nil
+	}
+	hasLimit := false
+	for _, p := range e.QueryParams {
+		if p.Name == "limit" {
+			hasLimit = true
+			break
+		}
+	}
+	if !hasLimit {
+		return nil
+	}
+	limit := defaultListLimit
+	if s := StringValue(in["limit"]); s != "" {
+		n, err := strconv.Atoi(s)
+		if err != nil || n <= 0 || n > maxMetaLimit {
+			return nil
+		}
+		limit = n
+	}
+	return &listPage{arrayKey: arrayKey, limit: limit}
+}
+
+func attachListMeta(result any, page *listPage) {
+	if page == nil {
+		return
+	}
+	envelope, ok := result.(map[string]any)
+	if !ok {
+		return
+	}
+	items, ok := envelope[page.arrayKey].([]any)
+	if !ok {
+		return
+	}
+	hasMore := len(items) > page.limit
+	if hasMore {
+		envelope[page.arrayKey] = items[:page.limit]
+	}
+	embedded, ok := envelope["_embedded"].(map[string]any)
+	if !ok {
+		embedded = map[string]any{}
+		envelope["_embedded"] = embedded
+	}
+	embedded["returned"] = min(len(items), page.limit)
+	embedded["limit"] = page.limit
+	embedded["hasMore"] = hasMore
 }

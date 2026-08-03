@@ -255,21 +255,41 @@ func projectPaths(v interface{}, paths []string) interface{} {
 		return out
 	case map[string]interface{}:
 		if key, arr, ok := singleArrayEnvelope(t, paths); ok {
-			return map[string]interface{}{key: projectPaths(arr, paths)}
+			out := map[string]interface{}{key: projectPaths(arr, paths)}
+			// Only the truncation signal survives projection — copying the whole
+			// map would re-emit collection-level embeds the fields asked to drop.
+			if embedded, hasEmbedded := t["_embedded"].(map[string]interface{}); hasEmbedded {
+				meta := map[string]interface{}{}
+				for _, k := range []string{"returned", "limit", "hasMore"} {
+					if v, exists := embedded[k]; exists {
+						meta[k] = v
+					}
+				}
+				if len(meta) > 0 {
+					out["_embedded"] = meta
+				}
+			}
+			return out
 		}
 		return pickFields(t, paths)
 	}
 	return v
 }
 
-// singleArrayEnvelope detects the list wrapper ({"transactions":[...]}): a
-// one-key map whose value is an array and whose key isn't itself a requested
-// path head. Returns the key, the array, and true when v should be unwrapped.
+// A collection-level `_embedded` sibling doesn't disqualify the wrapper, and a
+// key that is itself a requested path head must not be unwrapped.
 func singleArrayEnvelope(m map[string]interface{}, paths []string) (string, []interface{}, bool) {
-	if len(m) != 1 {
+	content := len(m)
+	if _, hasEmbedded := m["_embedded"]; hasEmbedded {
+		content--
+	}
+	if content != 1 {
 		return "", nil, false
 	}
 	for k, val := range m {
+		if k == "_embedded" {
+			continue
+		}
 		arr, ok := val.([]interface{})
 		if !ok {
 			return "", nil, false
