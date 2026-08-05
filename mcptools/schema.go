@@ -78,7 +78,7 @@ func endpointSchema(resource, verb string, e catalog.HelpEntry, embedDesc string
 	if workspaceParam {
 		props[WorkspaceParamName] = &jsonschema.Schema{
 			Type:        "string",
-			Description: "Workspace to act in — required. Routes the call to that workspace's grant.",
+			Description: "Workspace to act in.",
 		}
 		required = append(required, WorkspaceParamName)
 	}
@@ -108,11 +108,11 @@ func endpointSchema(resource, verb string, e catalog.HelpEntry, embedDesc string
 	if e.Method == "GET" {
 		props["fields"] = &jsonschema.Schema{
 			Type:        "string",
-			Description: "Keep only these dot-paths, e.g. `transactionId,params.amount` (see server instructions).",
+			Description: "Dot-paths to keep, comma-separated. bron_help topic `shaping-output`.",
 		}
 		props["jq"] = &jsonschema.Schema{
 			Type:        "string",
-			Description: "gojq program to reshape/filter the reply server-side, after `fields` (see server instructions).",
+			Description: "gojq program, applied after `fields`. bron_help topic `shaping-output`.",
 		}
 	}
 
@@ -134,12 +134,6 @@ func endpointSchema(resource, verb string, e catalog.HelpEntry, embedDesc string
 	}
 }
 
-// maxInlineEnum caps how many enum values we inline into a tool schema.
-// Only an oversized niche list crosses it (the 37-value activity-type filter,
-// ~1k chars and repeated twice) — its values are dropped and the agent is
-// pointed at `--schema`, trading a one-off lookup for context re-read every
-// session. Common tx status/type enums (≤28 values) stay inline so the model
-// fills them without a round-trip.
 const maxInlineEnum = 30
 
 var (
@@ -188,58 +182,34 @@ func queryParamSchema(q catalog.HelpQueryParam) *jsonschema.Schema {
 	}
 
 	if multiValue {
-		const hint = "Comma-separated string or array."
 		lower := strings.ToLower(s.Description)
-		alreadyNoted := strings.Contains(lower, "comma-separat") || strings.Contains(lower, "comma separat")
-		switch {
-		case s.Description == "":
-			s.Description = hint
-		case !alreadyNoted:
-			s.Description = strings.TrimRight(s.Description, ". ") + ". " + hint
+		if !strings.Contains(lower, "comma-separat") && !strings.Contains(lower, "comma separat") {
+			s.Description = appendNote(s.Description, "Comma-separated string or array.")
 		}
 	}
 
-	if n := len(q.Enum); n > 0 && n <= maxInlineEnum {
-		values := make([]any, 0, n)
-		for _, e := range q.Enum {
-			values = append(values, e)
-		}
-		if multiValue {
-			// A top-level enum would reject the CSV form of two valid values.
-			s.Items.Enum = values
-			s.Pattern = csvEnumPattern(q.Enum)
-		} else {
-			s.Enum = values
-		}
-	} else if n > maxInlineEnum {
-		note := fmt.Sprintf("One of %d enum values — pass the one you want; run the CLI with `--schema` for the full list.", n)
-		if s.Description == "" {
-			s.Description = note
-		} else {
-			s.Description = strings.TrimRight(s.Description, ". ") + ". " + note
-		}
+	if n := len(q.Enum); n > 0 {
+		s.Description = appendNote(s.Description, enumNote(q.Enum))
 	}
 
 	if strings.Contains(strings.ToLower(q.Name), "symbolid") {
-		const hint = "Symbol ids look like s01, s21252 — not s1."
-		if s.Description == "" {
-			s.Description = hint
-		} else {
-			s.Description = strings.TrimRight(s.Description, ". ") + ". " + hint
-		}
+		s.Description = appendNote(s.Description, "Symbol ids look like s01, s21252 — not s1.")
 	}
 	return s
 }
 
-// Items.Enum governs only the array form; the CSV string form needs its own
-// constraint or a typo validates and silently returns an empty result.
-func csvEnumPattern(values []string) string {
-	quoted := make([]string, 0, len(values))
-	for _, v := range values {
-		quoted = append(quoted, regexp.QuoteMeta(v))
+func appendNote(desc, note string) string {
+	if desc == "" {
+		return note
 	}
-	alt := "(" + strings.Join(quoted, "|") + ")"
-	return "^" + alt + "(," + alt + ")*$"
+	return strings.TrimRight(desc, ". ") + ". " + note
+}
+
+func enumNote(values []string) string {
+	if len(values) > maxInlineEnum {
+		return fmt.Sprintf("%d known values — run the CLI with `--schema` for the list; newer ones the API accepts also work.", len(values))
+	}
+	return "Known values: " + strings.Join(values, ", ") + ". The list grows — an unlisted value is sent as-is and the API validates it."
 }
 
 // endpointDescription is the agent-facing tool description. We keep it short

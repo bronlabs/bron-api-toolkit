@@ -117,6 +117,9 @@ func registerEndpoint(server *mcp.Server, doer Doer, t SpecTool, opts Options) {
 		Name:        t.Name,
 		Description: t.Description,
 		InputSchema: t.InputSchema,
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint: IsReadOnlyEndpoint(t.Resource, t.Verb, t.Entry),
+		},
 	}
 	mcp.AddTool(server, tool, func(ctx context.Context, _ *mcp.CallToolRequest, in map[string]any) (*mcp.CallToolResult, any, error) {
 		if validate != nil {

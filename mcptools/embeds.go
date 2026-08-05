@@ -12,8 +12,8 @@ import (
 // identically. Keyed by "<resource>.<verb>", matching Options.EmbedAugmentors.
 var DefaultEmbedAugmentors = map[string]*EmbedAugmentor{
 	"balances.list": {
-		Description: "Comma-separated list of resolved/calculated extras to attach under `_embedded` per balance. Supported tokens: `prices` — fetches USD price + USD value (requires one extra REST call to /dictionary/asset-market-prices).",
-		Apply:       applyBalancesPricesEmbed,
+		Description: "Comma-separated list of resolved/calculated extras to attach under `_embedded` per balance. Supported tokens: `prices` — fetches USD price + USD value (requires one extra REST call to /dictionary/asset-market-prices); `networks` — resolves `networkId` to `isTestnet` so testnet holdings can be told apart without listing accounts (one extra REST call to /dictionary/networks).",
+		Apply:       applyBalancesEmbeds,
 	},
 	"tx.list": {
 		Description: "Comma-separated list of resolved entities to attach under `_embedded` per transaction. Supported tokens: `assets` — resolves `params.assetId` to the full Asset DTO (symbol, networkId, decimals, ...) via one batch /dictionary/assets call.",
@@ -27,14 +27,7 @@ var DefaultEmbedAugmentors = map[string]*EmbedAugmentor{
 // per item. Soft-fails (returns nil) if the lookup blips so the agent still
 // gets the bare list.
 func applyTxListAssetsEmbed(ctx context.Context, doer Doer, result any, tokens []string) error {
-	wantsAssets := false
-	for _, t := range tokens {
-		if t == "assets" {
-			wantsAssets = true
-			break
-		}
-	}
-	if !wantsAssets {
+	if !hasEmbedToken(tokens, "assets") {
 		return nil
 	}
 	assetIds := UniqueTxAssetIds(result)
@@ -49,23 +42,24 @@ func applyTxListAssetsEmbed(ctx context.Context, doer Doer, result any, tokens [
 	return nil
 }
 
-// applyBalancesPricesEmbed mirrors `wrapBalancesListEmbedPrices` for the MCP
-// path: extracts assetIds from the balances response, fetches market prices
-// in a single call, and merges `_embedded.{usdPrice, usdQuoteSymbolId,
-// usdValue}` per item. Same helpers (`uniqueAssetIds`, `fetchAssetPrices`,
-// `mergeBalancePrices`) as the CLI orchestrator — single source of truth.
-//
-// Soft-fails the price fetch — if the prices endpoint blips, the agent still
-// gets the bare balances and can decide whether to retry.
-func applyBalancesPricesEmbed(ctx context.Context, doer Doer, result any, tokens []string) error {
-	wantsPrices := false
+func applyBalancesEmbeds(ctx context.Context, doer Doer, result any, tokens []string) error {
+	if err := applyBalancesPricesEmbed(ctx, doer, result, tokens); err != nil {
+		return err
+	}
+	return applyBalancesNetworksEmbed(ctx, doer, result, tokens)
+}
+
+func hasEmbedToken(tokens []string, want string) bool {
 	for _, t := range tokens {
-		if t == "prices" {
-			wantsPrices = true
-			break
+		if t == want {
+			return true
 		}
 	}
-	if !wantsPrices {
+	return false
+}
+
+func applyBalancesPricesEmbed(ctx context.Context, doer Doer, result any, tokens []string) error {
+	if !hasEmbedToken(tokens, "prices") {
 		return nil
 	}
 	assetIds := UniqueAssetIds(result)
@@ -116,6 +110,78 @@ func FetchAssetPrices(ctx context.Context, doer Doer, assetIds []string) (map[st
 type assetPrice struct {
 	QuoteSymbolId string
 	Price         string
+}
+
+func applyBalancesNetworksEmbed(ctx context.Context, doer Doer, result any, tokens []string) error {
+	if !hasEmbedToken(tokens, "networks") {
+		return nil
+	}
+	networkIds := UniqueNetworkIds(result)
+	if len(networkIds) == 0 {
+		return nil
+	}
+	testnetById, err := FetchNetworkTestnetFlags(ctx, doer, networkIds)
+	if err != nil {
+		return nil
+	}
+	MergeBalanceNetworks(result, testnetById)
+	return nil
+}
+
+func FetchNetworkTestnetFlags(ctx context.Context, doer Doer, networkIds []string) (map[string]bool, error) {
+	var v interface{}
+	query := map[string]interface{}{"networkIds": strings.Join(networkIds, ",")}
+	if err := doer.Do(ctx, "GET", "/dictionary/networks", nil, nil, query, &v); err != nil {
+		return nil, err
+	}
+
+	out := map[string]bool{}
+	m, ok := v.(map[string]interface{})
+	if !ok {
+		return out, nil
+	}
+	networks, _ := m["networks"].([]interface{})
+	for _, item := range networks {
+		nm, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		networkId, _ := nm["networkId"].(string)
+		if networkId == "" {
+			continue
+		}
+		testnet, _ := nm["isTestnet"].(bool)
+		out[networkId] = testnet
+	}
+	return out, nil
+}
+
+func UniqueNetworkIds(v interface{}) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, b := range balanceItems(v) {
+		if id, ok := b["networkId"].(string); ok && id != "" && !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func MergeBalanceNetworks(v interface{}, testnetById map[string]bool) {
+	for _, b := range balanceItems(v) {
+		networkId, _ := b["networkId"].(string)
+		testnet, ok := testnetById[networkId]
+		if !ok {
+			continue
+		}
+		emb, _ := b["_embedded"].(map[string]interface{})
+		if emb == nil {
+			emb = map[string]interface{}{}
+			b["_embedded"] = emb
+		}
+		emb["isTestnet"] = testnet
+	}
 }
 
 // UniqueAssetIds walks a balances response and returns deduplicated assetIds.
@@ -193,10 +259,7 @@ func mulDecimal(a, b string) string {
 	if !ok {
 		return ""
 	}
-	out := new(big.Rat).Mul(ar, br).FloatString(18)
-	out = strings.TrimRight(out, "0")
-	out = strings.TrimRight(out, ".")
-	return out
+	return trimDecimal(new(big.Rat).Mul(ar, br).FloatString(18))
 }
 
 func FetchAssetsById(ctx context.Context, doer Doer, assetIds []string) (map[string]map[string]interface{}, error) {

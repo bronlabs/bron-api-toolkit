@@ -27,6 +27,7 @@ func RegisterHelp(server *mcp.Server) {
 			},
 			AdditionalProperties: &jsonschema.Schema{},
 		},
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}
 	mcp.AddTool(server, tool, func(_ context.Context, _ *mcp.CallToolRequest, in map[string]any) (*mcp.CallToolResult, any, error) {
 		if topic := StringValue(in["topic"]); topic != "" {

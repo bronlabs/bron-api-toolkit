@@ -33,7 +33,10 @@ var HelpTopics = []HelpTopic{
 		Details: "List responses carry `returned`, `limit` and `hasMore` under the envelope's `_embedded`, next to " +
 			"the items array; they survive `fields` projection. `hasMore: true` means the page is NOT the whole " +
 			"set — repeat with `offset` advanced by `limit` (or narrow the filters) before summarizing. A `jq` " +
-			"program replaces the whole reply, so read `._embedded.hasMore` inside it when the signal still matters.",
+			"program replaces the whole reply, so read `._embedded.hasMore` inside it when the signal still matters. " +
+			"`_embedded` sits at two levels and they carry different things: on the envelope it is this page meta, " +
+			"on a list item it is that item's resolved or calculated extras (`_embedded.usdValue`, " +
+			"`_embedded.isTestnet`, `_embedded.events`). Neither is part of the spec-defined DTO.",
 	},
 	{
 		Topic: "recipes",

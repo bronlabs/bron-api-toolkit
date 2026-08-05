@@ -24,14 +24,15 @@ func txListParam(t *testing.T, name string) catalog.HelpQueryParam {
 	return catalog.HelpQueryParam{}
 }
 
-func TestMultiValueEnumParamAcceptsCSVAndArray(t *testing.T) {
-	s := queryParamSchema(txListParam(t, "transactionStatuses"))
+func TestMultiValueEnumParamAcceptsCSVArrayAndUnlistedValues(t *testing.T) {
+	q := txListParam(t, "transactionStatuses")
+	s := queryParamSchema(q)
 
-	if s.Items == nil || len(s.Items.Enum) == 0 {
-		t.Fatalf("enum must live on Items, got %+v", s)
+	if len(s.Enum) != 0 || (s.Items != nil && len(s.Items.Enum) != 0) || s.Pattern != "" {
+		t.Fatalf("enum values must be documented, not constrained, got %+v", s)
 	}
-	if len(s.Enum) != 0 {
-		t.Fatalf("top-level enum would reject the CSV form, got %v", s.Enum)
+	if !strings.Contains(s.Description, q.Enum[0]) {
+		t.Fatalf("description must list the known values, got %q", s.Description)
 	}
 
 	resolved, err := s.Resolve(nil)
@@ -39,15 +40,20 @@ func TestMultiValueEnumParamAcceptsCSVAndArray(t *testing.T) {
 		t.Fatalf("Resolve: %v", err)
 	}
 
-	for _, valid := range []any{"completed,canceled", []any{"completed", "canceled"}, "completed"} {
-		if err := resolved.Validate(valid); err != nil {
-			t.Fatalf("%v must validate: %v", valid, err)
+	valid := []any{
+		"completed,canceled",
+		[]any{"completed", "canceled"},
+		"completed",
+		"power-bank-usage",
+		[]any{"completed", "power-bank-usage"},
+	}
+	for _, v := range valid {
+		if err := resolved.Validate(v); err != nil {
+			t.Fatalf("%v must validate: %v", v, err)
 		}
 	}
-	for _, invalid := range []any{[]any{"bogus"}, "bogus", "completed,bogus", 42} {
-		if err := resolved.Validate(invalid); err == nil {
-			t.Fatalf("%v must be rejected", invalid)
-		}
+	if err := resolved.Validate(42); err == nil {
+		t.Fatal("a number must still be rejected")
 	}
 }
 
@@ -77,10 +83,10 @@ func TestOversizedEnumStaysOffSchema(t *testing.T) {
 	}
 
 	s := queryParamSchema(q)
-	if len(s.Enum) != 0 || (s.Items != nil && len(s.Items.Enum) != 0) {
-		t.Fatalf("oversized enum must not inline, got %+v", s)
+	if strings.Contains(s.Description, q.Enum[0]) {
+		t.Fatalf("oversized enum must not inline its values, got %q", s.Description)
 	}
-	if !strings.Contains(s.Description, "enum values") {
+	if !strings.Contains(s.Description, "--schema") {
 		t.Fatalf("description must point at the full list, got %q", s.Description)
 	}
 }
