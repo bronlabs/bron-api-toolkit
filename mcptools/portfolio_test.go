@@ -109,6 +109,34 @@ func TestPortfolioSeparatesTestnet(t *testing.T) {
 	}
 }
 
+func TestPortfolioAcceptsIsTestnetAsString(t *testing.T) {
+	asString := totalsOf(t, summaryFor(t, map[string]any{"workspaceId": "w1", "isTestnet": "true"}))
+	asBool := totalsOf(t, summaryFor(t, map[string]any{"workspaceId": "w1", "isTestnet": true}))
+
+	if asString["usdValue"] != asBool["usdValue"] || asString["positions"] != asBool["positions"] {
+		t.Fatalf("string form = %v, bool form = %v", asString, asBool)
+	}
+
+	if _, err := portfolioSummary(context.Background(), newPortfolioDoer(), map[string]any{"workspaceId": "w1", "isTestnet": "yes please"}, Options{WorkspaceParam: true}); err == nil {
+		t.Fatal("an unparseable isTestnet must be an error, not a silently dropped filter")
+	}
+}
+
+func TestPortfolioReturnsAnEmptyUnpricedList(t *testing.T) {
+	doer := newPortfolioDoer()
+	doer.balances = `{"balances":[{"accountId":"a1","assetId":"1","symbol":"BTC","networkId":"BTC","totalBalance":"0.1"}]}`
+
+	summary, err := portfolioSummary(context.Background(), doer, map[string]any{"workspaceId": "w1"}, Options{WorkspaceParam: true})
+	if err != nil {
+		t.Fatalf("portfolioSummary: %v", err)
+	}
+
+	unpriced, ok := summary["unpricedAssetIds"].([]string)
+	if !ok || unpriced == nil || len(unpriced) != 0 {
+		t.Fatalf("unpricedAssetIds = %#v, want an empty list", summary["unpricedAssetIds"])
+	}
+}
+
 func TestPortfolioCountsUnpricedSeparately(t *testing.T) {
 	summary := summaryFor(t, map[string]any{"workspaceId": "w1"})
 

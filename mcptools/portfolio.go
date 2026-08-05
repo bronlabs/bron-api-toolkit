@@ -18,11 +18,12 @@ const portfolioMaxPages = 20
 func RegisterPortfolioSummary(server *mcp.Server, doer Doer, opts Options) {
 	props := map[string]*jsonschema.Schema{
 		"isTestnet": {
-			Type:        "boolean",
+			Types:       []string{"boolean", "string"},
 			Description: "Keep only testnet holdings (true) or only mainnet ones (false). Omit for both.",
 		},
 		"groupBy": {
 			Type:        "string",
+			Enum:        []any{"asset", "network"},
 			Description: "`asset` merges the same asset across accounts (default), `network` rolls up per network.",
 		},
 	}
@@ -37,7 +38,8 @@ func RegisterPortfolioSummary(server *mcp.Server, doer Doer, opts Options) {
 		Name: "bron_portfolio_summary",
 		Description: "Total USD value of a workspace's holdings with the per-asset or per-network breakdown, " +
 			"mainnet and testnet told apart, priced and unpriced positions counted separately. " +
-			"Sums are decimal strings rounded at 18 fractional digits. " +
+			"Sums are decimal strings, each rounded independently at 18 fractional digits, " +
+			"so a breakdown can differ from its total in the last place. " +
 			"CLI mirror: `bron balances list --embed prices,networks`. Read-only.",
 		InputSchema: &jsonschema.Schema{
 			Type:                 "object",
@@ -109,7 +111,7 @@ func portfolioSummary(ctx context.Context, doer Doer, in map[string]any, opts Op
 	byNetwork := map[string]*portfolioNetwork{}
 	networkTotals := map[string]*big.Rat{}
 
-	var unpriced []string
+	unpriced := []string{}
 	seenUnpriced := map[string]bool{}
 
 	for _, balance := range balanceItems(rows) {
