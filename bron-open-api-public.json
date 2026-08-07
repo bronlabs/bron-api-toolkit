@@ -797,17 +797,17 @@
           "feeLevel" : {
             "$ref" : "#/components/schemas/FeeLevel",
             "default" : "medium",
-            "description" : "The fee level for the source-network withdrawal. [See details](/enums/FeeLevel)",
+            "description" : "The fee level for the source-network transfer. [See details](/enums/FeeLevel)",
             "examples" : [ "medium" ]
           },
           "sourceAssetId" : {
-            "description" : "The asset ID on the source network",
+            "description" : "The asset ID on the source network. The destination asset is resolved by the bridge handler between connected networks (e.g. hyperEVM ↔ hyperCORE)",
             "examples" : [ "11" ],
             "type" : "string"
           }
         },
         "required" : [ "sourceAssetId", "amount" ],
-        "title" : "Bridge asset between connected networks (e.g. hyperEVM ↔ hyperCORE). Destination asset is resolved by the bridge handler.",
+        "title" : "Bridge",
         "type" : "object"
       },
       "BronLockBurnExtra" : {
@@ -1019,17 +1019,9 @@
             }, {
               "$ref" : "#/components/schemas/DefiParams"
             }, {
-              "$ref" : "#/components/schemas/DepositParams"
-            }, {
-              "$ref" : "#/components/schemas/FiatInParams"
-            }, {
-              "$ref" : "#/components/schemas/FiatOutParams"
-            }, {
               "$ref" : "#/components/schemas/IntentsParams"
             }, {
               "$ref" : "#/components/schemas/IntentSolverSettlementParams"
-            }, {
-              "$ref" : "#/components/schemas/LoyaltyParams"
             }, {
               "$ref" : "#/components/schemas/NFTAllowanceParams"
             }, {
@@ -1087,6 +1079,7 @@
           }
         },
         "required" : [ "networkId", "origin", "message" ],
+        "title" : "DeFi message signing (WalletConnect)",
         "type" : "object"
       },
       "DefiParams" : {
@@ -1135,6 +1128,7 @@
           }
         },
         "required" : [ "networkId", "origin", "method" ],
+        "title" : "DeFi transaction (WalletConnect)",
         "type" : "object"
       },
       "DepositParams" : {
@@ -1157,6 +1151,7 @@
           }
         },
         "required" : [ "amount", "assetId", "networkId" ],
+        "title" : "Incoming transfer",
         "type" : "object"
       },
       "DryRunTransaction" : {
@@ -1333,69 +1328,6 @@
       "FeeLevel" : {
         "enum" : [ "low", "medium", "high" ],
         "type" : "string"
-      },
-      "FiatInParams" : {
-        "properties" : {
-          "amount" : {
-            "description" : "Amount to deposit",
-            "format" : "decimal",
-            "type" : "string"
-          },
-          "assetId" : {
-            "description" : "Target crypto asset to receive",
-            "type" : "string"
-          },
-          "fiatAssetId" : {
-            "description" : "Source fiat asset",
-            "type" : "string"
-          }
-        },
-        "required" : [ "amount", "assetId", "fiatAssetId" ],
-        "title" : "Fiat in (buy crypto with fiat)",
-        "type" : "object"
-      },
-      "FiatOutParams" : {
-        "properties" : {
-          "amount" : {
-            "description" : "Crypto amount to sell",
-            "format" : "decimal",
-            "type" : "string"
-          },
-          "assetId" : {
-            "description" : "Crypto asset to sell",
-            "type" : "string"
-          },
-          "feeLevel" : {
-            "$ref" : "#/components/schemas/FeeLevel",
-            "description" : "[See details](/enums/FeeLevel)"
-          },
-          "fiatAssetId" : {
-            "description" : "Target fiat asset",
-            "type" : "string"
-          },
-          "paymentPurpose" : {
-            "description" : "Payment purpose",
-            "examples" : [ "Vendor / Contractor Payouts" ],
-            "type" : "string"
-          },
-          "processingTier" : {
-            "description" : "Optional settlement speed tier for the selected rail when the provider offers more than one (e.g. \"instant\" or \"standard\")",
-            "examples" : [ "instant" ],
-            "type" : "string"
-          },
-          "reference" : {
-            "description" : "Reference shown on the recipient's bank statement; overrides the saved bank record reference",
-            "examples" : [ "Invoice 1234" ],
-            "type" : "string"
-          },
-          "toAddressBookRecordId" : {
-            "description" : "Bank account record ID from address book",
-            "type" : "string"
-          }
-        },
-        "required" : [ "amount", "assetId", "fiatAssetId", "toAddressBookRecordId" ],
-        "title" : "Fiat out (sell crypto to fiat)",
-        "type" : "object"
       },
       "HashFunction" : {
         "enum" : [ "none", "sha256d", "keccak256", "blake2b256", "sha256", "sha512", "sha512_half", "sha512_256", "poseidon" ],
@@ -1795,16 +1727,6 @@
         },
         "type" : "object"
       },
-      "LoyaltyParams" : {
-        "properties" : {
-          "amount" : {
-            "format" : "decimal",
-            "type" : "string"
-          }
-        },
-        "required" : [ "amount" ],
-        "type" : "object"
-      },
       "MemberStatus" : {
         "enum" : [ "new", "active", "rejected", "deactivated" ],
         "type" : "string"
@@ -2058,7 +1980,6 @@
             "type" : "string"
           }
         },
-        "required" : [ "toAddress" ],
         "type" : "object"
       },
       "RecordStatus" : {
@@ -2248,7 +2169,7 @@
         "type" : "object"
       },
       "SortBy" : {
-        "enum" : [ "updated", "activity" ],
+        "enum" : [ "updated", "activity", "created" ],
         "type" : "string"
       },
       "SortingDirection" : {
@@ -2285,7 +2206,8 @@
             "type" : "string"
           },
           "resource" : {
-            "$ref" : "#/components/schemas/StakeResource"
+            "$ref" : "#/components/schemas/StakeResource",
+            "description" : "[See details](/enums/StakeResource)"
           }
         },
         "required" : [ "assetId" ],
@@ -2293,7 +2215,7 @@
         "type" : "object"
       },
       "StakeResource" : {
-        "enum" : [ ],
+        "enum" : [ "energy", "bandwidth" ],
         "type" : "string"
       },
       "StakeRewardInfo" : {
@@ -2310,7 +2232,8 @@
             "type" : "string"
           },
           "resource" : {
-            "$ref" : "#/components/schemas/StakeResource"
+            "$ref" : "#/components/schemas/StakeResource",
+            "description" : "[See details](/enums/StakeResource)"
           },
           "stakeId" : {
             "type" : "string"
@@ -2334,6 +2257,7 @@
           }
         },
         "required" : [ "assetId" ],
+        "title" : "Stake release",
         "type" : "object"
       },
       "Stakes" : {
@@ -2917,7 +2841,7 @@
         "type" : "string"
       },
       "TransactionType" : {
-        "enum" : [ "deposit", "withdrawal", "multi-withdrawal", "negative-deposit", "auto-withdrawal", "allowance", "defi", "defi-message", "address-activation", "address-creation", "stake-delegation", "stake-undelegation", "stake-claim", "stake-withdrawal", "stake-take-reward", "stake-earn-reward", "swap-lifi", "intents", "intent-solver-settlement", "loyalty-lock", "loyalty-unlock", "loyalty-collect-rewards", "canton-reward", "nft-deposit", "nft-withdrawal", "nft-allowance", "fiat-out", "fiat-in", "bridge" ],
+        "enum" : [ "deposit", "withdrawal", "multi-withdrawal", "negative-deposit", "auto-withdrawal", "allowance", "defi", "defi-message", "address-activation", "address-creation", "stake-delegation", "stake-undelegation", "stake-claim", "stake-withdrawal", "stake-take-reward", "stake-earn-reward", "swap-lifi", "intents", "intent-solver-settlement", "loyalty-lock", "loyalty-unlock", "loyalty-collect-rewards", "canton-reward", "nft-deposit", "nft-withdrawal", "nft-allowance", "fiat-out", "fiat-in", "bridge", "earn-buy", "earn-sell", "power-bank-crypto-top-up", "power-bank-card-top-up", "power-bank-usage" ],
         "type" : "string"
       },
       "Transactions" : {
@@ -5363,7 +5287,7 @@
     },
     "/workspaces/{workspaceId}/addresses" : {
       "get" : {
-        "description" : "Retrieve information about all deposit addresses in an workspace\n\n<sup>API Key permissions: View only, Transaction Operator, Full Access</sup>",
+        "description" : "Retrieve information about all receiving addresses in a workspace\n\n<sup>API Key permissions: View only, Transaction Operator, Full Access</sup>",
         "parameters" : [ {
           "description" : "Filter addresses by account id",
           "in" : "query",
@@ -5539,7 +5463,7 @@
             "description" : "Conflict"
           }
         },
-        "summary" : "Get Deposit Addresses",
+        "summary" : "Get Addresses",
         "tags" : [ "addresses" ]
       }
     },
@@ -5663,6 +5587,23 @@
           "required" : false,
           "schema" : {
             "default" : "true",
+            "type" : "boolean"
+          }
+        }, {
+          "description" : "Keep only balances whose asset risk score is below the threshold, e.g. 10 hides spam and scam airdrops",
+          "in" : "query",
+          "name" : "riskScoreThreshold",
+          "required" : false,
+          "schema" : {
+            "format" : "int32",
+            "type" : "string"
+          }
+        }, {
+          "description" : "Keep only balances of testnet accounts (true) or of mainnet accounts (false)",
+          "in" : "query",
+          "name" : "isTestnet",
+          "required" : false,
+          "schema" : {
             "type" : "boolean"
           }
         }, {
@@ -6326,7 +6267,7 @@
           "name" : "limit",
           "required" : false,
           "schema" : {
-            "default" : "200",
+            "default" : "1000",
             "format" : "int64",
             "type" : "string"
           }
@@ -6989,6 +6930,14 @@
               "type" : "string"
             },
             "type" : "array"
+          }
+        }, {
+          "description" : "Keep only transactions of testnet accounts (true) or of mainnet accounts (false)",
+          "in" : "query",
+          "name" : "isTestnet",
+          "required" : false,
+          "schema" : {
+            "type" : "boolean"
           }
         }, {
           "description" : "Comma-separated transaction statuses. [See details](/enums/TransactionStatus)",
