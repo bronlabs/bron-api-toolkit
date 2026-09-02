@@ -176,12 +176,13 @@ func TestListMetaTruncationProbe(t *testing.T) {
 	}
 }
 
-func TestListMetaSkipsGetByIdAndHugeLimits(t *testing.T) {
+func TestListMetaSkipsGetByIdAndClampsHugeLimits(t *testing.T) {
 	if plan := listPagePlan(catalog.HelpEntries["tx"]["get"], map[string]any{}); plan != nil {
 		t.Fatalf("get-by-id must not get a paging plan, got %+v", plan)
 	}
-	if plan := listPagePlan(catalog.HelpEntries["tx"]["list"], map[string]any{"limit": float64(maxMetaLimit + 1)}); plan != nil {
-		t.Fatalf("over-cap limit must skip the probe, got %+v", plan)
+	plan := listPagePlan(catalog.HelpEntries["tx"]["list"], map[string]any{"limit": float64(maxMetaLimit + 1)})
+	if plan == nil || plan.limit != maxMetaLimit {
+		t.Fatalf("over-cap limit must clamp to %d and keep the probe, got %+v", maxMetaLimit, plan)
 	}
 }
 

@@ -19,6 +19,7 @@ type APIError struct {
 	Code      string
 	Message   string
 	RequestID string
+	Embedded  map[string]any
 }
 
 func (e *APIError) Error() string {
@@ -45,6 +46,13 @@ func ErrorResult(err error) *mcp.CallToolResult {
 		payload["message"] = output.SanitizeForTerminal(apiErr.Message)
 		if apiErr.RequestID != "" {
 			payload["requestId"] = output.SanitizeForTerminal(apiErr.RequestID)
+		}
+		if len(apiErr.Embedded) > 0 {
+			embedded := make(map[string]any, len(apiErr.Embedded))
+			for k, v := range apiErr.Embedded {
+				embedded[output.SanitizeForTerminal(k)] = output.SanitizeForTerminal(fmt.Sprint(v))
+			}
+			payload["_embedded"] = embedded
 		}
 	} else {
 		payload["message"] = output.SanitizeForTerminal(err.Error())

@@ -1,6 +1,7 @@
 package mcptools
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -131,5 +132,73 @@ func TestShapeResultEmptyJqHint(t *testing.T) {
 				t.Fatalf("non-empty jq result must not carry a hint, got %#v", shaped)
 			}
 		})
+	}
+}
+
+func specToolByName(t *testing.T, name string) SpecTool {
+	t.Helper()
+	for _, st := range SpecTools(Options{WorkspaceParam: true}) {
+		if st.Name == name {
+			return st
+		}
+	}
+	t.Fatalf("tool %s not found", name)
+	return SpecTool{}
+}
+
+func TestRejectUnknownArgs(t *testing.T) {
+	list := specToolByName(t, "bron_tx_list")
+	if err := rejectUnknownArgs(map[string]any{"workspaceId": "w", "accountid": "a"}, list); err == nil || !strings.Contains(err.Error(), "accountid") {
+		t.Fatalf("misspelled filter must be rejected, got %v", err)
+	}
+	if err := rejectUnknownArgs(map[string]any{"workspaceId": "w", "accountId": "a", "fields": "transactionId"}, list); err != nil {
+		t.Fatalf("known args must pass, got %v", err)
+	}
+
+	create := specToolByName(t, "bron_tx_create")
+	if err := rejectUnknownArgs(map[string]any{"workspaceId": "w", "params.amount": "1", "body": map[string]any{}}, create); err != nil {
+		t.Fatalf("dot-path under a body property must pass, got %v", err)
+	}
+	if err := rejectUnknownArgs(map[string]any{"workspaceId": "w", "externalID": "x"}, create); err == nil || !strings.Contains(err.Error(), "externalID") {
+		t.Fatalf("misspelled body field must be rejected, got %v", err)
+	}
+}
+
+type captureDoer struct{ body any }
+
+func (d *captureDoer) Do(_ context.Context, _, _ string, _ map[string]string, body, _, result any) error {
+	d.body = body
+	*(result.(*any)) = map[string]any{"transactionId": "t1"}
+	return nil
+}
+
+func TestRunEndpointRequiresExternalId(t *testing.T) {
+	e := catalog.HelpEntries["tx"]["create"]
+	in := map[string]any{"workspaceId": "w", "transactionType": "withdrawal", "accountId": "a", "params.amount": "1"}
+	if _, err := runEndpoint(context.Background(), &captureDoer{}, e, in, true); err == nil || !strings.Contains(err.Error(), "externalId") {
+		t.Fatalf("missing externalId must be rejected before the call, got %v", err)
+	}
+	in["externalId"] = "op-1"
+	doer := &captureDoer{}
+	if _, err := runEndpoint(context.Background(), doer, e, in, true); err != nil {
+		t.Fatalf("complete body must pass, got %v", err)
+	}
+	if body, _ := doer.body.(map[string]any); body["externalId"] != "op-1" {
+		t.Fatalf("externalId must reach the request body, got %v", doer.body)
+	}
+}
+
+func TestWriteBodySkipsShapingArgs(t *testing.T) {
+	e := catalog.HelpEntries["tx"]["create"]
+	in := map[string]any{"workspaceId": "w", "transactionType": "withdrawal", "accountId": "a", "externalId": "op-2", "fields": "transactionId", "jq": "."}
+	doer := &captureDoer{}
+	if _, err := runEndpoint(context.Background(), doer, e, in, true); err != nil {
+		t.Fatalf("runEndpoint err: %v", err)
+	}
+	body, _ := doer.body.(map[string]any)
+	for _, k := range []string{"fields", "jq"} {
+		if _, leaked := body[k]; leaked {
+			t.Fatalf("%s must not reach the request body, got %v", k, body)
+		}
 	}
 }

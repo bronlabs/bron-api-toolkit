@@ -110,7 +110,7 @@ func ExtractBodyBaseline(in map[string]any) (any, error) {
 // selector. Each value is stringified via StringValue so body.Compose can
 // JSON-parse numerics/bools.
 func bodyFields(in map[string]any, e catalog.HelpEntry) map[string]string {
-	skip := map[string]bool{"body": true, WorkspaceParamName: true}
+	skip := map[string]bool{"body": true, "fields": true, "jq": true, "embed": true, WorkspaceParamName: true}
 	for _, p := range e.PathArgs {
 		skip[p] = true
 	}

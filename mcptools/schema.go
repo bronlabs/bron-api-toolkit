@@ -105,24 +105,24 @@ func endpointSchema(resource, verb string, e catalog.HelpEntry, embedDesc string
 		}
 	}
 
-	if e.Method == "GET" {
-		props["fields"] = &jsonschema.Schema{
-			Type:        "string",
-			Description: "Dot-paths to keep, comma-separated. bron_help topic `shaping-output`.",
-		}
-		props["jq"] = &jsonschema.Schema{
-			Type:        "string",
-			Description: "gojq program, applied after `fields`. bron_help topic `shaping-output`.",
-		}
+	props["fields"] = &jsonschema.Schema{
+		Type:        "string",
+		Description: "Dot-paths to keep, comma-separated. bron_help topic `shaping-output`.",
+	}
+	props["jq"] = &jsonschema.Schema{
+		Type:        "string",
+		Description: "gojq program, applied after `fields`. bron_help topic `shaping-output`.",
 	}
 
+	additional := &jsonschema.Schema{Not: &jsonschema.Schema{}}
 	if e.Method != "GET" && e.Method != "DELETE" {
+		additional = &jsonschema.Schema{}
 		props["body"] = &jsonschema.Schema{
 			Type:        "object",
 			Description: fmt.Sprintf("Full request body as JSON (matches the %s schema). Optional — overrides individual fields below.", e.BodyRef),
 		}
 		for k, desc := range writeBodyFields(resource, verb) {
-			props[k] = &jsonschema.Schema{Type: "string", Description: desc}
+			props[k] = &jsonschema.Schema{Type: writeBodyFieldType(k), Description: desc}
 		}
 	}
 
@@ -130,7 +130,7 @@ func endpointSchema(resource, verb string, e catalog.HelpEntry, embedDesc string
 		Type:                 "object",
 		Properties:           props,
 		Required:             required,
-		AdditionalProperties: &jsonschema.Schema{},
+		AdditionalProperties: additional,
 	}
 }
 
@@ -273,16 +273,23 @@ var actionDescriptions = map[string]string{
 	"tx.approve":                "Approve a transaction (signing-required → waiting-approval → signing). State-changing — confirm with the user before invoking",
 	"tx.decline":                "Decline a transaction. Terminal. State-changing — confirm with the user. `reason` surfaces in the audit log",
 	"tx.cancel":                 "Cancel a transaction (only valid before signing). Terminal. State-changing — confirm with the user",
-	"tx.create":                 "Create a new transaction. Pass `transactionType` + `accountId` + per-type `params.*` fields, OR use a `bron_tx_<type>` shortcut. Call `bron_help` with a shortcut name (e.g. `bron_tx_withdrawal`) for that type's params schema. State-changing — confirm with the user",
+	"tx.create":                 "Create a new transaction. Pass `transactionType` + `accountId` + per-type `params.*` fields, OR use a `bron_tx_<type>` shortcut. Call `bron_help` with a shortcut name (e.g. `bron_tx_withdrawal`) for that type's params schema. `externalId` is required and idempotent: a retry with the same externalId answers 409 already-exists carrying the existing transactionId under _embedded, never a second transaction. State-changing — confirm with the user",
 	"tx.create-signing-request": "Create a signing request on an existing transaction so signers can produce signatures. State-changing — confirm with the user before invoking",
 	"tx.dry-run":                "Validate a transaction body without sending it. Use to preview fees, balance checks, etc.",
 	"tx.bulk-create":            "Create many transactions at once — pass `body` as `{ transactions: [CreateTransaction, ...] }` (the spec wraps the array under `transactions`, not a bare array). State-changing — confirm with the user before invoking",
 	"tx.events":                 "Get the audit-log event timeline of one transaction",
 	"tx.accept-deposit-offer":   "Accept an incoming deposit offer (state-changing)",
 	"tx.reject-outgoing-offer":  "Reject an outgoing offer (state-changing)",
-	"address-book.create":       "Create an address-book record (saved address / tag / bank). State-changing — confirm with the user",
+	"address-book.create":       "Create an address-book record (saved address / tag / bank). `externalId` is required and idempotent. State-changing — confirm with the user",
 	"address-book.delete":       "Delete an address-book record by id. State-changing — confirm with the user",
 	"intents.create":            "Create a DeFi intent. State-changing — confirm with the user",
+}
+
+func writeBodyFieldType(field string) string {
+	if field == "accept" {
+		return "boolean"
+	}
+	return "string"
 }
 
 func methodLabel(method string) string {
@@ -311,11 +318,12 @@ func writeBodyFields(resource, verb string) map[string]string {
 			"accountId":       "Source account id",
 			"description":     "Free-form description",
 			"expiresAt":       "Optional expiry — ISO 8601 or epoch millis",
-			"externalId":      "Idempotency key",
+			"externalId":      "Idempotency key — required. Reuse the same value to retry the same operation (a duplicate answers 409 already-exists with the existing transactionId under _embedded), never for a different payload",
 			"transactionType": "Transaction type — e.g. withdrawal, allowance, bridge, deposit, defi, defi-message, fiat-in, fiat-out, stake-delegation, stake-undelegation, stake-claim, stake-withdrawal, address-creation, address-activation, intents",
 		}
 	case "address-book.create":
 		return map[string]string{
+			"externalId": "Idempotency key — required. Reuse the same value to retry the same operation, never for a different payload",
 			"name":       "Display name",
 			"address":    "Blockchain address (or tag / bank account number depending on `recordType`)",
 			"networkId":  "Network id (ETH, TRX, BTC, ...). Required for blockchain addresses",
@@ -323,7 +331,19 @@ func writeBodyFields(resource, verb string) map[string]string {
 			"recordType": "address | tag | bank",
 		}
 	case "tx.accept-deposit-offer", "tx.reject-outgoing-offer":
-		return map[string]string{"reason": "Free-text reason"}
+		return map[string]string{
+			"accept": "true to accept the offer, false to reject it",
+			"reason": "Free-text reason",
+		}
+	case "intents.create":
+		return map[string]string{
+			"accountId":   "Account the intent is placed on",
+			"intentId":    "Client-side unique intent id (idempotency key per account)",
+			"fromAssetId": "Asset to sell",
+			"toAssetId":   "Asset to buy",
+			"fromAmount":  "Amount to sell — one of fromAmount / toAmount",
+			"toAmount":    "Amount to buy — one of fromAmount / toAmount",
+		}
 	}
 	return nil
 }

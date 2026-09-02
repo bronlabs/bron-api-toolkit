@@ -122,6 +122,9 @@ func registerEndpoint(server *mcp.Server, doer Doer, t SpecTool, opts Options) {
 		},
 	}
 	mcp.AddTool(server, tool, func(ctx context.Context, _ *mcp.CallToolRequest, in map[string]any) (*mcp.CallToolResult, any, error) {
+		if err := rejectUnknownArgs(in, t); err != nil {
+			return ErrorResult(err), nil, nil
+		}
 		if validate != nil {
 			if err := validate(in); err != nil {
 				return ErrorResult(err), nil, nil
@@ -312,6 +315,9 @@ func runEndpoint(ctx context.Context, doer Doer, e catalog.HelpEntry, in map[str
 		if err := CoerceBodyDates(payload); err != nil {
 			return nil, err
 		}
+		if err := requireBodyFields(payload, e); err != nil {
+			return nil, err
+		}
 	}
 
 	var result any
@@ -362,10 +368,10 @@ func listPagePlan(e catalog.HelpEntry, in map[string]any) *listPage {
 	limit := defaultListLimit
 	if s := StringValue(in["limit"]); s != "" {
 		n, err := strconv.Atoi(s)
-		if err != nil || n <= 0 || n > maxMetaLimit {
+		if err != nil || n <= 0 {
 			return nil
 		}
-		limit = n
+		limit = min(n, maxMetaLimit)
 	}
 	return &listPage{arrayKey: arrayKey, limit: limit}
 }
@@ -394,4 +400,56 @@ func attachListMeta(result any, page *listPage) {
 	embedded["returned"] = min(len(items), page.limit)
 	embedded["limit"] = page.limit
 	embedded["hasMore"] = hasMore
+}
+
+func rejectUnknownArgs(in map[string]any, t SpecTool) error {
+	bodyProps := map[string]bool{}
+	if t.Entry.Method != "GET" && t.Entry.Method != "DELETE" {
+		if schema, ok := catalog.BodySchemaFor(t.Entry.BodyRef); ok {
+			bodyProps = schema.Properties
+		}
+	}
+	var unknown []string
+	for k := range in {
+		if _, ok := t.InputSchema.Properties[k]; ok {
+			continue
+		}
+		if bodyProps[strings.SplitN(k, ".", 2)[0]] {
+			continue
+		}
+		unknown = append(unknown, k)
+	}
+	if len(unknown) == 0 {
+		return nil
+	}
+	sort.Strings(unknown)
+	accepted := make([]string, 0, len(t.InputSchema.Properties)+len(bodyProps))
+	for k := range t.InputSchema.Properties {
+		accepted = append(accepted, k)
+	}
+	for k := range bodyProps {
+		if _, dup := t.InputSchema.Properties[k]; !dup {
+			accepted = append(accepted, k)
+		}
+	}
+	sort.Strings(accepted)
+	return fmt.Errorf("unknown argument(s) %s for %s; accepted: %s", strings.Join(unknown, ", "), t.Name, strings.Join(accepted, ", "))
+}
+
+func requireBodyFields(payload any, e catalog.HelpEntry) error {
+	schema, ok := catalog.BodySchemaFor(e.BodyRef)
+	if !ok {
+		return nil
+	}
+	m, _ := payload.(map[string]any)
+	var missing []string
+	for _, k := range schema.Required {
+		if v, ok := m[k]; !ok || v == nil || v == "" {
+			missing = append(missing, k)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("missing required body field(s) %s for %s", strings.Join(missing, ", "), e.BodyRef)
 }
