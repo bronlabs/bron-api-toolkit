@@ -56,7 +56,12 @@ func RegisterPortfolioSummary(server *mcp.Server, doer Doer, opts Options) {
 			return ErrorResult(err), nil, nil
 		}
 
-		return toolResult(summary)
+		generic, err := genericTree(summary)
+		if err != nil {
+			return ErrorResult(err), nil, nil
+		}
+
+		return toolResult(WrapUntrustedFields(generic))
 	})
 }
 

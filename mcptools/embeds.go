@@ -18,6 +18,7 @@ var DefaultEmbedAugmentors = map[string]*EmbedAugmentor{
 	"tx.list": {
 		Description: "Comma-separated list of resolved entities to attach under `_embedded` per transaction. Supported tokens: `assets` — resolves `params.assetId` to the full Asset DTO (symbol, networkId, decimals, ...) via one batch /dictionary/assets call.",
 		Apply:       applyTxListAssetsEmbed,
+		Injects:     map[string]string{"transactions._embedded.asset": "Asset"},
 	},
 }
 

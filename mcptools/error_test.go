@@ -38,8 +38,8 @@ func TestErrorResultPreservesStructuredFields(t *testing.T) {
 			if p["code"] != "rate-limited" {
 				t.Fatalf("code = %v, want rate-limited", p["code"])
 			}
-			if p["message"] != "slow down" {
-				t.Fatalf("message = %v, want slow down", p["message"])
+			if p["message"] != `<untrusted source="message">slow down</untrusted>` {
+				t.Fatalf("message = %v, want the enveloped message", p["message"])
 			}
 			if p["requestId"] != "req-123" {
 				t.Fatalf("requestId = %v, want req-123", p["requestId"])

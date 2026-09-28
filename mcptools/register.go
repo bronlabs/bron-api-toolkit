@@ -33,6 +33,7 @@ type Doer interface {
 type EmbedAugmentor struct {
 	Description string
 	Apply       func(ctx context.Context, doer Doer, result any, tokens []string) error
+	Injects     map[string]string
 }
 
 // Options tunes spec-driven registration for one consumer.
@@ -112,7 +113,11 @@ func RegisterSpecDriven(server *mcp.Server, doer Doer, opts Options) {
 func registerEndpoint(server *mcp.Server, doer Doer, t SpecTool, opts Options) {
 	aug := opts.EmbedAugmentors[t.Resource+"."+t.Verb]
 	validate := opts.PreCallValidators[t.Resource+"."+t.Verb]
-	untrusted := catalog.ExternalTextKeys(t.Entry.ResponseRef)
+	untrusted := catalog.ExternalTextPaths(t.Entry.ResponseRef)
+	var switchAt map[string]string
+	if aug != nil {
+		switchAt = aug.Injects
+	}
 	tool := &mcp.Tool{
 		Name:        t.Name,
 		Description: t.Description,
@@ -142,7 +147,7 @@ func registerEndpoint(server *mcp.Server, doer Doer, t SpecTool, opts Options) {
 				}
 			}
 		}
-		shaped, err := shapeResult(result, fieldsFromInput(in), jqFromInput(in), untrusted)
+		shaped, err := shapeResult(result, fieldsFromInput(in), jqFromInput(in), untrusted, switchAt)
 		if err != nil {
 			return ErrorResult(err), nil, nil
 		}
@@ -152,8 +157,8 @@ func registerEndpoint(server *mcp.Server, doer Doer, t SpecTool, opts Options) {
 
 // Wrapping before Project is a security requirement — projecting first strips
 // leaves before the untrusted markers can be attached.
-func shapeResult(result any, fields []string, jqProg string, untrusted map[string]bool) (any, error) {
-	shaped := output.Project(WrapUntrustedFieldsWithKeys(result, untrusted), fields)
+func shapeResult(result any, fields []string, jqProg string, untrusted map[string]bool, switchAt map[string]string) (any, error) {
+	shaped := output.Project(WrapUntrusted(result, WrapOptions{Paths: untrusted, SwitchAt: switchAt}), fields)
 	if jqProg != "" {
 		plain := output.Plain(shaped)
 		out, err := jqfilter.Run(jqProg, plain)

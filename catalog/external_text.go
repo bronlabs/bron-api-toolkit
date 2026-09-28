@@ -5,16 +5,10 @@ import (
 	"strings"
 )
 
-var externalTextKeysByRef = computeExternalTextKeys()
+var externalTextPathsByRef = computeExternalTextPaths()
 
-// ExternalTextKeys returns the property key names marked format:"external-text"
-// anywhere in the response tree rooted at schemaRef (HelpEntry.ResponseRef),
-// resolving $refs into components.schemas and descending arrays, nested objects
-// and _embedded. These are user/counterparty free-text fields the MCP layer
-// wraps in <untrusted> markers. Returns a fresh copy so callers can't mutate the
-// cached set.
-func ExternalTextKeys(schemaRef string) map[string]bool {
-	src := externalTextKeysByRef[schemaRef]
+func ExternalTextPaths(schemaRef string) map[string]bool {
+	src := externalTextPathsByRef[schemaRef]
 	out := make(map[string]bool, len(src))
 	for k := range src {
 		out[k] = true
@@ -22,8 +16,17 @@ func ExternalTextKeys(schemaRef string) map[string]bool {
 	return out
 }
 
-func computeExternalTextKeys() map[string]map[string]bool {
+func ExternalTextKeys(schemaRef string) map[string]bool {
+	out := map[string]bool{}
+	for p := range externalTextPathsByRef[schemaRef] {
+		out[p[strings.LastIndex(p, ".")+1:]] = true
+	}
+	return out
+}
+
+func computeExternalTextPaths() map[string]map[string]bool {
 	result := map[string]map[string]bool{}
+
 	var doc struct {
 		Components struct {
 			Schemas map[string]json.RawMessage `json:"schemas"`
@@ -32,6 +35,7 @@ func computeExternalTextKeys() map[string]map[string]bool {
 	if err := json.Unmarshal(Spec, &doc); err != nil {
 		return result
 	}
+
 	schemas := make(map[string]map[string]any, len(doc.Components.Schemas))
 	for name, raw := range doc.Components.Schemas {
 		var m map[string]any
@@ -39,42 +43,81 @@ func computeExternalTextKeys() map[string]map[string]bool {
 			schemas[name] = m
 		}
 	}
+
 	for name := range schemas {
-		keys := map[string]bool{}
-		collectExternalText(schemas, schemas[name], keys, map[string]bool{})
-		if len(keys) > 0 {
-			result[name] = keys
+		paths := map[string]bool{}
+		collectExternalText(schemas, schemas[name], "", nil, paths)
+		if len(paths) > 0 {
+			result[name] = paths
 		}
 	}
 	return result
 }
 
-func collectExternalText(schemas map[string]map[string]any, node map[string]any, keys, visited map[string]bool) {
+func collectExternalText(schemas map[string]map[string]any, node map[string]any, prefix string, ancestry []string, paths map[string]bool) {
 	if node == nil {
 		return
 	}
+
 	if ref, ok := node["$ref"].(string); ok {
 		name := ref[strings.LastIndex(ref, "/")+1:]
-		if name == "" || visited[name] {
+		if name == "" || containsRef(ancestry, name) {
 			return
 		}
-		visited[name] = true
-		collectExternalText(schemas, schemas[name], keys, visited)
+		collectExternalText(schemas, schemas[name], prefix, appendRef(ancestry, name), paths)
 		return
 	}
+
 	if props, ok := node["properties"].(map[string]any); ok {
 		for key, raw := range props {
 			def, ok := raw.(map[string]any)
 			if !ok {
 				continue
 			}
-			if f, _ := def["format"].(string); f == "external-text" {
-				keys[key] = true
+
+			path := key
+			if prefix != "" {
+				path = prefix + "." + key
 			}
-			collectExternalText(schemas, def, keys, visited)
+			if f, _ := def["format"].(string); f == "external-text" {
+				paths[path] = true
+			}
+
+			collectExternalText(schemas, def, path, ancestry, paths)
 		}
 	}
+
 	if items, ok := node["items"].(map[string]any); ok {
-		collectExternalText(schemas, items, keys, visited)
+		collectExternalText(schemas, items, prefix, ancestry, paths)
 	}
+
+	for _, keyword := range []string{"oneOf", "anyOf", "allOf"} {
+		arr, ok := node[keyword].([]any)
+		if !ok {
+			continue
+		}
+		for _, raw := range arr {
+			if sub, ok := raw.(map[string]any); ok {
+				collectExternalText(schemas, sub, prefix, ancestry, paths)
+			}
+		}
+	}
+}
+
+func containsRef(ancestry []string, name string) bool {
+	for _, seen := range ancestry {
+		if seen == name {
+			return true
+		}
+	}
+	return false
+}
+
+func appendRef(ancestry []string, name string) []string {
+	// A shared backing array would let one branch overwrite the ancestry a
+	// sibling branch is still walking, so this copies instead of appending.
+	out := make([]string, len(ancestry)+1)
+	copy(out, ancestry)
+	out[len(ancestry)] = name
+	return out
 }
