@@ -92,15 +92,25 @@ func ExtractBodyBaseline(in map[string]any) (any, error) {
 	if m, ok := v.(map[string]any); ok {
 		return m, nil
 	}
+	out, err := genericTree(v)
+	if err != nil {
+		return nil, fmt.Errorf("body: %w", err)
+	}
+	return out, nil
+}
+
+func genericTree(v any) (any, error) {
 	b, err := json.Marshal(v)
 	if err != nil {
-		return nil, fmt.Errorf("body: marshal: %w", err)
+		return nil, fmt.Errorf("marshal: %w", err)
 	}
+
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.UseNumber()
+
 	var out any
 	if err := dec.Decode(&out); err != nil {
-		return nil, fmt.Errorf("body: unmarshal: %w", err)
+		return nil, fmt.Errorf("unmarshal: %w", err)
 	}
 	return out, nil
 }

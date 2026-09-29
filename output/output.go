@@ -602,24 +602,64 @@ func formatScalar(v interface{}) string {
 //
 // Keeps `\t` (column separator) and `\n` (line break in long strings).
 func SanitizeForTerminal(s string) string {
-	if !strings.ContainsAny(s, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x7f") {
+	if !strings.ContainsFunc(s, isStrippedRune) {
 		return s
 	}
 	var b strings.Builder
 	b.Grow(len(s))
 	for _, r := range s {
-		switch {
-		case r == '\t' || r == '\n':
-			b.WriteRune(r)
-		case r < 0x20 || r == 0x7f:
-			// drop
-		case r >= 0x80 && r < 0xa0:
-			// drop C1 controls
-		default:
+		if !isStrippedRune(r) {
 			b.WriteRune(r)
 		}
 	}
 	return b.String()
+}
+
+func isStrippedRune(r rune) bool {
+	switch {
+	case r == '\t' || r == '\n':
+		return false
+	case r < 0x20 || r == 0x7f:
+		return true
+	case r >= 0x80 && r < 0xa0:
+		return true
+	}
+	return IsInvisible(r)
+}
+
+func StripInvisible(s string) string {
+	if !strings.ContainsFunc(s, IsInvisible) {
+		return s
+	}
+
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if !IsInvisible(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func IsInvisible(r rune) bool {
+	// ZWNJ/ZWJ (200C-200D), the bidi marks (200E-200F, 061C) and the variation
+	// selectors (FE00-FE0F) are deliberately absent: they carry real text.
+	switch {
+	case r == 0x00AD || r == 0x034F || r == 0x200B || r == 0xFEFF:
+		return true
+	case r >= 0x202A && r <= 0x202E:
+		return true
+	case r >= 0x2060 && r <= 0x2064:
+		return true
+	case r >= 0x2066 && r <= 0x206F:
+		return true
+	case r >= 0xE0000 && r <= 0xE007F:
+		return true
+	case r >= 0xE0100 && r <= 0xE01EF:
+		return true
+	}
+	return false
 }
 
 // formatTableCell renders a value for a table cell. Like formatScalar, but
