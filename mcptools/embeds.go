@@ -14,6 +14,7 @@ var DefaultEmbedAugmentors = map[string]*EmbedAugmentor{
 	"balances.list": {
 		Description: "Comma-separated list of resolved/calculated extras to attach under `_embedded` per balance. Supported tokens: `prices` — fetches USD price + USD value (requires one extra REST call to /dictionary/asset-market-prices); `networks` — resolves `networkId` to `isTestnet` so testnet holdings can be told apart without listing accounts (one extra REST call to /dictionary/networks).",
 		Apply:       applyBalancesEmbeds,
+		Injects:     map[string]string{},
 	},
 	"tx.list": {
 		Description: "Comma-separated list of resolved entities to attach under `_embedded` per transaction. Supported tokens: `assets` — resolves `params.assetId` to the full Asset DTO (symbol, networkId, decimals, ...) via one batch /dictionary/assets call.",

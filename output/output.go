@@ -608,7 +608,7 @@ func SanitizeForTerminal(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
 	for _, r := range s {
-		if r == '\t' || r == '\n' || !isStrippedRune(r) {
+		if !isStrippedRune(r) {
 			b.WriteRune(r)
 		}
 	}

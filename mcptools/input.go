@@ -102,7 +102,7 @@ func ExtractBodyBaseline(in map[string]any) (any, error) {
 func genericTree(v any) (any, error) {
 	b, err := json.Marshal(v)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal: %w", err)
 	}
 
 	dec := json.NewDecoder(bytes.NewReader(b))
@@ -110,7 +110,7 @@ func genericTree(v any) (any, error) {
 
 	var out any
 	if err := dec.Decode(&out); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshal: %w", err)
 	}
 	return out, nil
 }

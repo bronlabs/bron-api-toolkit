@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 )
 
@@ -16,10 +17,12 @@ func ExternalTextPaths(schemaRef string) map[string]bool {
 	return out
 }
 
-func ExternalTextKeys(schemaRef string) map[string]bool {
+func ExternalTextNames() map[string]bool {
 	out := map[string]bool{}
-	for p := range externalTextPathsByRef[schemaRef] {
-		out[p[strings.LastIndex(p, ".")+1:]] = true
+	for _, paths := range externalTextPathsByRef {
+		for p := range paths {
+			out[p[strings.LastIndex(p, ".")+1:]] = true
+		}
 	}
 	return out
 }
@@ -61,10 +64,10 @@ func collectExternalText(schemas map[string]map[string]any, node map[string]any,
 
 	if ref, ok := node["$ref"].(string); ok {
 		name := ref[strings.LastIndex(ref, "/")+1:]
-		if name == "" || containsRef(ancestry, name) {
+		if name == "" || slices.Contains(ancestry, name) {
 			return
 		}
-		collectExternalText(schemas, schemas[name], prefix, appendRef(ancestry, name), paths)
+		collectExternalText(schemas, schemas[name], prefix, append(slices.Clip(ancestry), name), paths)
 		return
 	}
 
@@ -102,22 +105,4 @@ func collectExternalText(schemas map[string]map[string]any, node map[string]any,
 			}
 		}
 	}
-}
-
-func containsRef(ancestry []string, name string) bool {
-	for _, seen := range ancestry {
-		if seen == name {
-			return true
-		}
-	}
-	return false
-}
-
-func appendRef(ancestry []string, name string) []string {
-	// A shared backing array would let one branch overwrite the ancestry a
-	// sibling branch is still walking, so this copies instead of appending.
-	out := make([]string, len(ancestry)+1)
-	copy(out, ancestry)
-	out[len(ancestry)] = name
-	return out
 }
