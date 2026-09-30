@@ -61,7 +61,7 @@ func RegisterPortfolioSummary(server *mcp.Server, doer Doer, opts Options) {
 			return ErrorResult(err), nil, nil
 		}
 
-		return toolResult(WrapUntrustedFields(generic))
+		return toolResult(WrapUntrustedFieldsWithKeys(generic, map[string]bool{"symbol": true}))
 	})
 }
 
