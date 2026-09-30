@@ -277,7 +277,7 @@ var actionDescriptions = map[string]string{
 	"tx.create-signing-request": "Create a signing request on an existing transaction so signers can produce signatures. State-changing — confirm with the user before invoking",
 	"tx.dry-run":                "Validate a transaction body without sending it. Use to preview fees, balance checks, etc.",
 	"tx.bulk-create":            "Create many transactions at once — pass `body` as `{ transactions: [CreateTransaction, ...] }` (the spec wraps the array under `transactions`, not a bare array). State-changing — confirm with the user before invoking",
-	"tx.events":                 "Get the audit-log event timeline of one transaction",
+	"tx.events":                 "Get the settled on-chain balance movements of one transaction — one event per debit, credit and network fee (a swap yields out, in and fee). Empty until something lands on chain; this is the source for financial totals",
 	"tx.accept-deposit-offer":   "Accept an incoming deposit offer (state-changing)",
 	"tx.reject-outgoing-offer":  "Reject an outgoing offer (state-changing)",
 	"address-book.create":       "Create an address-book record (saved address / tag / bank). `externalId` is required and idempotent. State-changing — confirm with the user",
