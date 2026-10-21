@@ -9,16 +9,22 @@ import (
 
 func TestExternalTextPathsPinned(t *testing.T) {
 	for ref, want := range map[string][]string{
-		"AddressBookRecords": {"records.memo", "records.name", "records.tag"},
+		"AddressBookRecords": {"records.email", "records.memo", "records.name", "records.tag"},
 		"WorkspaceMembers":   {"members._embedded.profile.name"},
 		"Activities":         {"activities.description", "activities.title"},
 		"Transactions": {
+			"_embedded.events.symbol",
+			"transactions._embedded.events.symbol",
 			"transactions.extra.description",
+			"transactions.extra.fiatRamp.bankDetails.accountHolderName",
+			"transactions.extra.fiatRamp.fiatInReceived.reference",
+			"transactions.extra.fiatRamp.fiatInReceived.senderName",
 			"transactions.extra.fromWorkspaceName",
 			"transactions.extra.fromWorkspaceTag",
 			"transactions.extra.memo",
 			"transactions.extra.toWorkspaceName",
 			"transactions.extra.toWorkspaceTag",
+			"transactions.params.recipientEmail",
 		},
 	} {
 		if got := slices.Sorted(maps.Keys(ExternalTextPaths(ref))); !slices.Equal(got, want) {
