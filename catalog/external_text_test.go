@@ -9,7 +9,7 @@ import (
 
 func TestExternalTextPathsPinned(t *testing.T) {
 	for ref, want := range map[string][]string{
-		"AddressBookRecords": {"records.email", "records.memo", "records.name", "records.tag"},
+		"AddressBookRecords": {"records.email", "records.memo", "records.name", "records.note", "records.tag"},
 		"WorkspaceMembers":   {"members._embedded.profile.name"},
 		"Activities":         {"activities.description", "activities.title"},
 		"Transactions": {
